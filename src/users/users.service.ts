@@ -5,18 +5,31 @@ import { Repository } from 'typeorm';
 import { CreateUserDto } from 'src/users/dtos/create-user.dto';
 import { UpdateUserDto } from 'src/users/dtos/update-user.dto';
 import { UserResponseDto } from 'src/users/dtos/user-response.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
   constructor(@InjectRepository(User) private repo: Repository<User>) {}
 
-  create(createUserDto: CreateUserDto): Promise<User> {
-    const user = this.repo.create(createUserDto);
-    return this.repo.save(user);
+  async create(createUserDto: CreateUserDto): Promise<User> {
+    const { password, ...userData } = createUserDto;
+    const hashedPassword = await this.hashedPassword(password);
+
+    const newUser = this.repo.create({
+      ...userData,
+      password: hashedPassword,
+    });
+
+    newUser.password = await bcrypt.hash(createUserDto.password, 10);
+    return this.repo.save(newUser);
   }
 
   findOne(id: number): Promise<User | null> {
     return this.repo.findOneBy({ id });
+  }
+
+  findOneByEmail(email: string): Promise<User | null> {
+    return this.repo.findOneBy({ email });
   }
 
   find(userResponseDto: UserResponseDto): Promise<User[]> {
@@ -51,5 +64,14 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
     await this.repo.remove(user);
+  }
+
+  async validatePassword(user: User, password: string): Promise<boolean> {
+    return await bcrypt.compare(password, user.password);
+  }
+
+  async hashedPassword(password: string): Promise<string> {
+    const salt = 10;
+    return await bcrypt.hash(password, salt);
   }
 }
